@@ -41,6 +41,10 @@ print('Percentage of accidents with injured or fatal victimes = {:.2f}%'.format(
 print('Total # of injured people = {}'.format(inj_accidents))
 print('Total # of fatalities = {}'.format(death_accidents))
 
+#-----------------check if needed----------------------------
+years= subset[subset['PED_ROLE'].notna()]['year'].unique()
+#------------------------------------------------------------
+
 #Calculating total number of accidents by neighborhood by year
 by_neighb = subset[subset['BOROUGH'].notna()].groupby(['BOROUGH', 'year'])['year'].count().unstack('year')
 print('\nTotal number of accidents by neighborhood\n')
@@ -52,8 +56,14 @@ inj_fatal_by_neighb = subset[bool_inj_fatal].groupby(['BOROUGH', 'year'])['year'
 display(inj_fatal_by_neighb)
 
 print('\nPercentage of injury/death over total accidents')
-display(round(pd.DataFrame.divide(inj_fatal_by_neighb,total)*100,0))
+perc_fatal = round(pd.DataFrame.divide(inj_fatal_by_neighb,total)*100,1)
+display(perc_fatal)
 
 print('\nAccidents by neighborhood and by driver gender')
 
 subset[subset['BOROUGH'].notna()][['BOROUGH','DRIVER_SEX','year']].groupby(['BOROUGH','DRIVER_SEX'])['year'].count().unstack('DRIVER_SEX').fillna(0)
+
+print('\nPercentage of injury/death over total accidents')
+import matplotlib.pyplot as plt
+perc_fatal[perc_fatal.columns].plot(kind='bar', stacked=True)
+plt.legend(loc='center left', bbox_to_anchor=(1.0, 0.5))
