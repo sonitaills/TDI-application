@@ -1,0 +1,59 @@
+import pandas as pd
+import numpy as np
+
+crashes = pd.read_csv('Motor_Vehicle_Collisions_-_Crashes.csv', index_col = 'COLLISION_ID' )
+people = pd.read_csv('Motor_Vehicle_Collisions_-_Person.csv', index_col = 'COLLISION_ID')
+vehicle = pd.read_csv('Motor_Vehicle_Collisions_-_Vehicles.csv', index_col = 'COLLISION_ID' )
+
+merge_from_people = ['PERSON_TYPE','PERSON_INJURY', 'PERSON_AGE','PED_ROLE','PERSON_SEX','PED_ACTION','PED_LOCATION']
+merge_from_vehicle = ['DRIVER_SEX','VEHICLE_OCCUPANTS', 'VEHICLE_DAMAGE','DRIVER_LICENSE_STATUS']
+drop_from_crashes = ['ZIP CODE','LATITUDE','LONGITUDE', 'LOCATION', 'ON STREET NAME','CROSS STREET NAME', 'OFF STREET NAME']
+
+combined = crashes.drop(drop_from_crashes,axis = 1)
+combined = pd.merge(combined,people[merge_from_people],how='outer', left_index = True, right_index = True)
+combined = pd.merge(combined,vehicle[merge_from_vehicle],how='outer', left_index = True, right_index = True)
+
+crashes=None
+people=None
+vehicle=None
+
+combined['CRASH DATE'] = pd.to_datetime(combined['CRASH DATE'])
+combined['year'] = combined['CRASH DATE'].dt.year
+
+#columns of interest for the preliminary analysis
+injur_fatalities = ['year','BOROUGH','PED_ROLE','NUMBER OF PERSONS INJURED','NUMBER OF PERSONS KILLED','NUMBER OF PEDESTRIANS INJURED',
+       'NUMBER OF PEDESTRIANS KILLED', 'NUMBER OF CYCLIST INJURED',
+       'NUMBER OF CYCLIST KILLED', 'NUMBER OF MOTORIST INJURED',
+       'NUMBER OF MOTORIST KILLED','DRIVER_SEX']
+
+#Filtering data where persons killed and persons injured are NaN
+subset = combined[combined['NUMBER OF PERSONS KILLED'].notna() | combined['NUMBER OF PERSONS INJURED'].notna()][injur_fatalities]
+# Percentage of accidents with injured or fatal victimes
+
+#to determine if an accident had an injury or death, first we need to clean up where these two columns are not known
+
+total_accidents = len(subset.index)
+inj_accidents = len(subset[subset['NUMBER OF PERSONS INJURED'].gt(0)].index)
+death_accidents= len(subset[subset['NUMBER OF PERSONS KILLED'].gt(0)].index)
+inj_death_accidents = inj_accidents+death_accidents
+
+print('Percentage of accidents with injured or fatal victimes = {:.2f}%'.format(inj_death_accidents/total_accidents*100))
+print('Total # of injured people = {}'.format(inj_accidents))
+print('Total # of fatalities = {}'.format(death_accidents))
+
+#Calculating total number of accidents by neighborhood by year
+by_neighb = subset[subset['BOROUGH'].notna()].groupby(['BOROUGH', 'year'])['year'].count().unstack('year')
+print('\nTotal number of accidents by neighborhood\n')
+display(by_neighb)
+
+print('\nTotal number of accidents with injury/death by neighborhood')
+bool_inj_fatal = subset['BOROUGH'].notna() & (subset['NUMBER OF PERSONS INJURED'].gt(0) | subset['NUMBER OF PERSONS KILLED'].gt(0))
+inj_fatal_by_neighb = subset[bool_inj_fatal].groupby(['BOROUGH', 'year'])['year'].count().unstack('year').fillna(0)
+display(inj_fatal_by_neighb)
+
+print('\nPercentage of injury/death over total accidents')
+display(round(pd.DataFrame.divide(inj_fatal_by_neighb,total)*100,0))
+
+print('\nAccidents by neighborhood and by driver gender')
+
+subset[subset['BOROUGH'].notna()][['BOROUGH','DRIVER_SEX','year']].groupby(['BOROUGH','DRIVER_SEX'])['year'].count().unstack('DRIVER_SEX').fillna(0)
