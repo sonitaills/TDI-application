@@ -1,0 +1,121 @@
+#OBS: Se colocarmos o colision_ID como índice, ele não vai ser único! Quando temm mais de uma pessoa ferida
+#o mesmo colision ID vem do dataset de pessoas (faz sentido)
+#-------------------------------------------------------------------------------------------------------------
+import pandas as pd
+import numpy as np
+
+crashes = pd.read_csv('Motor_Vehicle_Collisions_-_Crashes.csv', index_col = 'COLLISION_ID' )
+
+#Adding year / month columns to dataset
+crashes['CRASH DATE'] = pd.to_datetime(crashes['CRASH DATE'])
+crashes['year'] = crashes['CRASH DATE'].dt.year
+crashes['month'] = crashes['CRASH DATE'].dt.month
+
+#How can I map the crash place?
+#Data with mapping opportunity
+places = ['BOROUGH','ON STREET NAME','ZIP CODE','LATITUDE','LONGITUDE','year','month','NUMBER OF PERSONS INJURED',
+       'NUMBER OF PERSONS KILLED', 'NUMBER OF PEDESTRIANS INJURED',
+       'NUMBER OF PEDESTRIANS KILLED', 'NUMBER OF CYCLIST INJURED',
+       'NUMBER OF CYCLIST KILLED', 'NUMBER OF MOTORIST INJURED',
+       'NUMBER OF MOTORIST KILLED']
+known_places = crashes[places].dropna(subset = places[1:],how ='all')
+crashes_size = crashes.shape[0]
+#Ammount of know location
+known_streets = crashes['ON STREET NAME'].dropna().count()
+known_zip_codes = crashes['ZIP CODE'].dropna().count()
+known_coordinates = crashes['LATITUDE'].dropna().count()
+print('Ammount of data with known streets = {}, corresponding to {:.2f}% of dataset '.format(known_streets,known_streets/known_places.shape[0]*100))
+print('Ammount of data with known codes = {}, corresponding to {:.2f}% of dataset '.format(known_zip_codes,known_zip_codes/known_places.shape[0]*100))
+print('Ammount of data with known coordinates = {}, corresponding to {:.2f}% of dataset '.format(known_coordinates,known_coordinates/known_places.shape[0]*100))
+# Here should be a graph showing the most common mapping type used and focus of this analysis
+
+#How much data do we have mapped via coordinates but no borough data?
+unk_bor = known_places[known_places['BOROUGH'].isna()]
+unk_bor_kno_coor = known_places[known_places['BOROUGH'].isna() & known_places['LATITUDE'].notna()]
+print('Ammount of data with unknown borough = {}, corresponding to {:.2f}% of dataset '.format(len(unk_bor),len(unk_bor)/known_places.shape[0]*100))
+print('Ammount of data with unknown borough but with known coordinates = {}, corresponding to {:.2f}% of dataset '.format(len(unk_bor_kno_coor),len(unk_bor_kno_coor)/known_places.shape[0]*100))
+
+
+# On the cell above I have mapped the ammount of data that has means of identifying the BOROUGH, but it is not currently there.
+#Now I'll use only the ones that are already mapped
+acc_with_borough = crashes[places].dropna(subset = ['BOROUGH'])
+know_borough_percent = acc_with_borough.shape[0]/crashes_size
+print('Known borough = {}, corresponding to {:.2f} % of accidents'.format(acc_with_borough.shape[0],know_borough_percent))
+know_borough_indices = list(acc_with_borough.index) #This indices will be passed to the other dataframes
+
+by_bor_by_year = acc_with_borough.groupby(['BOROUGH','year']).apply(lambda x: len(x))
+unstack_test= by_bor_by_year.unstack()
+#Esta tabela mostra a distribuição de acidentes por bairro / por ano
+print('# of accidents')
+display(unstack_test)
+inj_kil_dict = {'INJURED':'NUMBER OF PERSONS INJURED','KILLED':'NUMBER OF PERSONS KILLED'}
+injury_accidents = pd.pivot_table(acc_with_borough, values= inj_kil_dict['INJURED'], index=['BOROUGH','year'],aggfunc= np.nansum).unstack()
+print('# of injured people')
+display(injury_accidents)
+print('# of killed people')
+fatal_accidents = pd.pivot_table(acc_with_borough, values= inj_kil_dict['KILLED'], index=['BOROUGH','year'],aggfunc= np.nansum).unstack()
+display(fatal_accidents)
+
+import scipy.stats
+
+motorist_accidents = pd.pivot_table(acc_with_borough, values= 'NUMBER OF MOTORIST INJURED', index=['BOROUGH','year'],aggfunc= np.nansum).unstack()
+motorist_accidents['mean (w/o 2021)'] = motorist_accidents[motorist_accidents.columns[:-1]].apply(lambda x: round(np.mean(x)),axis =1)
+motorist_accidents['stdev (w/o 2021)'] = motorist_accidents[motorist_accidents.columns[:-2]].apply(lambda x: round(np.std(x)),axis =1)
+motorist_accidents['coef_var % (w/o 2021)'] = motorist_accidents[motorist_accidents.columns[:-3]].apply(lambda x: round(scipy.stats.variation(x)*100),axis =1)
+display(motorist_accidents)
+
+pedestrian_accidents = pd.pivot_table(acc_with_borough, values= 'NUMBER OF PEDESTRIANS INJURED', index=['BOROUGH','year'],aggfunc= np.nansum).unstack()
+pedestrian_accidents['mean (w/o 2021)'] = pedestrian_accidents[pedestrian_accidents.columns[:-1]].apply(lambda x: round(np.mean(x)),axis =1)
+pedestrian_accidents['stdev (w/o 2021)'] = pedestrian_accidents[pedestrian_accidents.columns[:-2]].apply(lambda x: round(np.std(x)),axis =1)
+pedestrian_accidents['coef_var % (w/o 2021)'] = pedestrian_accidents[pedestrian_accidents.columns[:-3]].apply(lambda x: round(scipy.stats.variation(x)*100),axis =1)
+display(pedestrian_accidents)
+
+cyclist_accidents = pd.pivot_table(acc_with_borough, values= 'NUMBER OF CYCLIST INJURED', index=['BOROUGH','year'],aggfunc= np.nansum).unstack()
+cyclist_accidents['mean (w/o 2021)'] = cyclist_accidents[cyclist_accidents.columns[:-1]].apply(lambda x: round(np.mean(x)),axis =1)
+cyclist_accidents['stdev (w/o 2021)'] = cyclist_accidents[cyclist_accidents.columns[:-2]].apply(lambda x: round(np.std(x)),axis =1)
+cyclist_accidents['coef_var % (w/o 2021)'] = cyclist_accidents[cyclist_accidents.columns[:-3]].apply(lambda x: round(scipy.stats.variation(x)*100),axis =1)
+display(cyclist_accidents)
+
+#Need now to import the people dataset
+people = pd.read_csv('Motor_Vehicle_Collisions_-_Person.csv')
+people = people[people.PERSON_TYPE.notna()] #removing row w/o info about victm (just 1 row)
+people.set_index('COLLISION_ID', inplace = True)
+
+#Joining people dataset with known borough_locations
+wanted_from_people = ['UNIQUE_ID','CRASH_TIME','PERSON_TYPE','PERSON_INJURY','PERSON_AGE','COMPLAINT','CONTRIBUTING_FACTOR_1','CONTRIBUTING_FACTOR_2','PERSON_SEX']
+
+
+#Filtering from people df all entries that are not victims
+bol_mask = people['PED_ROLE'].ne('Registrant') & people['PED_ROLE'].ne('Notified Person') & people['PED_ROLE'].ne('Witness') & people['PED_ROLE'].ne('Policy Holder')
+people_subset = people[bol_mask] 
+
+#Since only the known boroughs will be investigated, we need to get the unique colision ID's from acc_with_borough subset
+#crash_and_people = pd.merge(acc_with_borough,people_subset[wanted_from_people],how='left',left_index= True, right_index= True)
+#victims_df traz a quantidade de acidentes com vítimas onde a vítima é conhecida
+#victims_df = crash_and_people[crash_and_people['PERSON_TYPE'].notna()& (crash_and_people['NUMBER OF PERSONS INJURED'].gt(0))]
+
+import matplotlib.pyplot as plt
+# Pie chart, where the slices will be ordered and plotted counter-clockwise:
+injury_accidents['sum'] = injury_accidents[injury_accidents.columns].apply(lambda x: round(np.sum(x)),axis =1)
+labels = list(injury_accidents.index)
+
+explode = (0, 0.2, 0, 0.2, 0)  # only "explode" the 2nd slice (i.e. 'Hogs')
+sizes = injury_accidents['sum']
+
+fig, (ax1,ax2) = plt.subplots(1,2,figsize=(10,5))
+fig.suptitle("Severity distribution", fontsize=18)
+
+ax1.pie(sizes, explode=explode, labels=labels, autopct='%1.1f%%',
+        shadow=True, startangle=45)
+ax1.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+ax1.set_title('Accidents with injuries')
+
+sizes = fatal_accidents[fatal_accidents.columns].apply(lambda x: round(np.sum(x)),axis =1)
+ax2.pie(sizes, explode=explode, labels=labels, autopct='%1.1f%%',
+        shadow=True, startangle=90, labeldistance=0.9)
+ax2.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+ax2.set_title('Accidents with fatalities')
+
+plt.legend(loc="best",bbox_to_anchor=(1.8,0.7), title="Borough", fancybox=True, ncol=1, shadow=True, 
+           fontsize = 'large', title_fontsize ='x-large')
+plt.show()
